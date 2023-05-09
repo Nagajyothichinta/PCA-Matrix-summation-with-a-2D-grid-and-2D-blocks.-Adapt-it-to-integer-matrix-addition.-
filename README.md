@@ -1,347 +1,85 @@
-# PCA-GPU-based-vector-summation.-Explore-the-differences.
-i) Using the program sumArraysOnGPU-timer.cu, set the block.x = 1023. Recompile and run it. Compare the result with the execution confi guration of block.x = 1024. Try to explain the difference and the reason.
+# PCA-Matrix-summation-with-a-2D-grid-and-2D-blocks.-Adapt-it-to-integer-matrix-addition.-
 
-ii) Refer to sumArraysOnGPU-timer.cu, and let block.x = 256. Make a new kernel to let each thread handle two elements. Compare the results with other execution confi gurations.
 ## Aim:
-(i) To modify or set the execution configuration of block.x as 1023 & 1024 and compare the elapsed time obtained on Host and GPU.
-
-(ii) To set the number of threads as 256 and obtain the elapsed time on Host and GPU.
+To perform PCA matrix summation with a 2D grid and 2D blocks and adapting it to integer matrix addition.
 
 ## Procedure:
-```
-1.Initialize the device and set the device properties.
+1.Include the required files and library.
 
-2.Allocate memory on the host for input and output arrays.
+2.Declare a function sumMatrixOnHost , to perform matrix summation on the host side . Declare three matrix A , B , C . Store the resultant matrix in C.
 
-3.Initialize input arrays with random values on the host.
+3.Declare a function with _ global _ , which is a CUDA C keyword , to execute the function to perform matrix summation on GPU .
 
-4.Allocate memory on the device for input and output arrays, and copy input data from host to device.
+4.Declare Main method/function .
 
-5.Launch a CUDA kernel to perform vector addition on the device.
-```
+5.In the Main function Set up device and data size of matrix ,Allocate Host Memory and device global memory,Initialize data at host side and then add matrix at host side ,transfer data from host to device.
 
-6.Copy output data from the device to the host and verify the results against the host's sequential vector addition. Free memory on the host and the device.
-## Program:
+6.Invoke kernel at host side , check for kernel error and copy kernel result back to host side.
+
+7.Finally Free device global memory,host memory and reset device.
+
+8.Save and Run the Program.
+
+##Program:
 Developed By: Chevula Naga Durga
 Reg.No:212221230014
-
-## 1. Block.x=1023
-```
-#include "../common/common.h" 
-#include <cuda_runtime.h> 
-#include <stdio.h>
-void checkResult(float *hostRef, float *gpuRef, const int N) 
-{ 
-double epsilon = 1.0E-8; bool match = 1;
-for (int i = 0; i < N; i++)
-{
-    if (abs(hostRef[i] - gpuRef[i]) > epsilon)
-    {
-        match = 0;
-        printf("Arrays do not match!\n");
-        printf("host %5.2f gpu %5.2f at current %d\n", hostRef[i],
-               gpuRef[i], i);
-        break;
-    }
-}
-
-if (match) printf("Arrays match.\n\n");
-
-return;
-void initialData(float *ip, int size) { // generate different seed for random number time_t t; srand((unsigned) time(&t));
-
-for (int i = 0; i < size; i++)
-{
-    ip[i] = (float)( rand() & 0xFF ) / 10.0f;
-}
-
-return;
-}
-void sumArraysOnHost(float *A, float *B, float *C, const int N)
-{
-for (int idx = 0; idx < N; idx++)
-{ 
-C[idx] = A[idx] + B[idx]; 
-} } 
-global void sumArraysOnGPU(float *A, float *B, float *C, const int N)
-{ 
-int i = blockIdx.x * blockDim.x + threadIdx.x;
-
-if (i < N) C[i] = A[i] + B[i];
-}
-int main(int argc, char **argv)
-{ 
-printf("%s Starting...\n", argv[0]);
-
-// set up device
-int dev = 0;
-cudaDeviceProp deviceProp;
-CHECK(cudaGetDeviceProperties(&deviceProp, dev));
-printf("Using Device %d: %s\n", dev, deviceProp.name);
-CHECK(cudaSetDevice(dev));
-
-// set up data size of vectors
-int nElem = 1 << 27;
-printf("Vector size %d\n", nElem);
-
-// malloc host memory
-size_t nBytes = nElem * sizeof(float);
-
-float *h_A, *h_B, *hostRef, *gpuRef;
-h_A     = (float *)malloc(nBytes);
-h_B     = (float *)malloc(nBytes);
-hostRef = (float *)malloc(nBytes);
-gpuRef  = (float *)malloc(nBytes);
-
-double iStart, iElaps;
-
-// initialize data at host side
-iStart = seconds();
-initialData(h_A, nElem);
-initialData(h_B, nElem);
-iElaps = seconds() - iStart;
-printf("initialData Time elapsed %f sec\n", iElaps);
-memset(hostRef, 0, nBytes);
-memset(gpuRef,  0, nBytes);
-
-// add vector at host side for result checks
-iStart = seconds();
-sumArraysOnHost(h_A, h_B, hostRef, nElem);
-iElaps = seconds() - iStart;
-printf("sumArraysOnHost Time elapsed %f sec\n", iElaps);
-
-// malloc device global memory
-float *d_A, *d_B, *d_C;
-CHECK(cudaMalloc((float**)&d_A, nBytes));
-CHECK(cudaMalloc((float**)&d_B, nBytes));
-CHECK(cudaMalloc((float**)&d_C, nBytes));
-
-// transfer data from host to device
-CHECK(cudaMemcpy(d_A, h_A, nBytes, cudaMemcpyHostToDevice));
-CHECK(cudaMemcpy(d_B, h_B, nBytes, cudaMemcpyHostToDevice));
-CHECK(cudaMemcpy(d_C, gpuRef, nBytes, cudaMemcpyHostToDevice));
-
-// invoke kernel at host side
-int iLen = 1023;
-dim3 block (iLen);
-dim3 grid  ((nElem + block.x - 1) / block.x);
-
-iStart = seconds();
-sumArraysOnGPU<<<grid, block>>>(d_A, d_B, d_C, nElem);
-CHECK(cudaDeviceSynchronize());
-iElaps = seconds() - iStart;
-printf("sumArraysOnGPU <<<  %d, %d  >>>  Time elapsed %f sec\n", grid.x,
-       block.x, iElaps);
-
-// check kernel error
-CHECK(cudaGetLastError()) ;
-
-// copy kernel result back to host side
-CHECK(cudaMemcpy(gpuRef, d_C, nBytes, cudaMemcpyDeviceToHost));
-
-// check device results
-checkResult(hostRef, gpuRef, nElem);
-
-// free device global memory
-CHECK(cudaFree(d_A));
-CHECK(cudaFree(d_B));
-CHECK(cudaFree(d_C));
-
-// free host memory
-free(h_A);
-free(h_B);
-free(hostRef);
-free(gpuRef);
-
-return(0);
 ```
 
-##2. Block.x=1024
-```
-#include "../common/common.h" 
-#include <cuda_runtime.h> 
-#include <stdio.h>
-void checkResult(float *hostRef, float *gpuRef, const int N) 
-{ 
-double epsilon = 1.0E-8;
-bool match = 1;
-
-for (int i = 0; i < N; i++)
-{
-    if (abs(hostRef[i] - gpuRef[i]) > epsilon)
-    {
-        match = 0;
-        printf("Arrays do not match!\n");
-        printf("host %5.2f gpu %5.2f at current %d\n", hostRef[i],
-               gpuRef[i], i);
-        break;
-    }
-}
-
-if (match) printf("Arrays match.\n\n");
-
-return;
-}
-void initialData(float *ip, int size) 
-{ 
-time_t t; 
-srand((unsigned) time(&t));
-
-for (int i = 0; i < size; i++)
-{
-    ip[i] = (float)( rand() & 0xFF ) / 10.0f;
-}
-
-return;
-}
-void sumArraysOnHost(float *A, float *B, float *C, const int N) 
-{ 
-for (int idx = 0; idx < N; idx++)
-{ 
-C[idx] = A[idx] + B[idx]; 
-} }
-global void sumArraysOnGPU(float *A, float *B, float *C, const int N) 
-{ 
-int i = blockIdx.x * blockDim.x + threadIdx.x;
-
-if (i < N) C[i] = A[i] + B[i];
-}
-int main(int argc, char **argv)
-{ 
-printf("%s Starting...\n", argv[0]);
-
-// set up device
-int dev = 0;
-cudaDeviceProp deviceProp;
-CHECK(cudaGetDeviceProperties(&deviceProp, dev));
-printf("Using Device %d: %s\n", dev, deviceProp.name);
-CHECK(cudaSetDevice(dev));
-
-// set up data size of vectors
-int nElem = 1 << 27;
-printf("Vector size %d\n", nElem);
-
-// malloc host memory
-size_t nBytes = nElem * sizeof(float);
-
-float *h_A, *h_B, *hostRef, *gpuRef;
-h_A     = (float *)malloc(nBytes);
-h_B     = (float *)malloc(nBytes);
-hostRef = (float *)malloc(nBytes);
-gpuRef  = (float *)malloc(nBytes);
-
-double iStart, iElaps;
-
-// initialize data at host side
-iStart = seconds();
-initialData(h_A, nElem);
-initialData(h_B, nElem);
-iElaps = seconds() - iStart;
-printf("initialData Time elapsed %f sec\n", iElaps);
-memset(hostRef, 0, nBytes);
-memset(gpuRef,  0, nBytes);
-
-// add vector at host side for result checks
-iStart = seconds();
-sumArraysOnHost(h_A, h_B, hostRef, nElem);
-iElaps = seconds() - iStart;
-printf("sumArraysOnHost Time elapsed %f sec\n", iElaps);
-
-// malloc device global memory
-float *d_A, *d_B, *d_C;
-CHECK(cudaMalloc((float**)&d_A, nBytes));
-CHECK(cudaMalloc((float**)&d_B, nBytes));
-CHECK(cudaMalloc((float**)&d_C, nBytes));
-
-// transfer data from host to device
-CHECK(cudaMemcpy(d_A, h_A, nBytes, cudaMemcpyHostToDevice));
-CHECK(cudaMemcpy(d_B, h_B, nBytes, cudaMemcpyHostToDevice));
-CHECK(cudaMemcpy(d_C, gpuRef, nBytes, cudaMemcpyHostToDevice));
-
-// invoke kernel at host side
-int iLen = 1024;
-dim3 block (iLen);
-dim3 grid  ((nElem + block.x - 1) / block.x);
-
-iStart = seconds();
-sumArraysOnGPU<<<grid, block>>>(d_A, d_B, d_C, nElem);
-CHECK(cudaDeviceSynchronize());
-iElaps = seconds() - iStart;
-printf("sumArraysOnGPU <<<  %d, %d  >>>  Time elapsed %f sec\n", grid.x,
-       block.x, iElaps);
-
-// check kernel error
-CHECK(cudaGetLastError()) ;
-
-// copy kernel result back to host side
-CHECK(cudaMemcpy(gpuRef, d_C, nBytes, cudaMemcpyDeviceToHost));
-
-// check device results
-checkResult(hostRef, gpuRef, nElem);
-
-// free device global memory
-CHECK(cudaFree(d_A));
-CHECK(cudaFree(d_B));
-CHECK(cudaFree(d_C));
-
-// free host memory
-free(h_A);
-free(h_B);
-free(hostRef);
-free(gpuRef);
-
-return(0);
-}
-```
-##3. Block.x=256
-```
-#include "../common/common.h"
+#include "common.h" 
 #include <cuda_runtime.h>
 #include <stdio.h>
 
-void checkResult(float *hostRef, float *gpuRef, const int N) 
-{ 
-double epsilon = 1.0E-8;
-bool match = 1;
+ { 
+ int i;
+
+for(i = 0; i < size; i++)
+{
+    ip[i] = (int)(rand() & 0xFF) / 10.0f;
+}
+
+return;
+}
+
+void sumMatrixOnHost(int *A, int *B, int *C, const int nx, const int ny) { int *ia = A; int *ib = B; int *ic = C;
+
+for (int iy = 0; iy < ny; iy++)
+{
+    for (int ix = 0; ix < nx; ix++)
+    {
+        ic[ix] = ia[ix] + ib[ix];
+
+    }
+
+    ia += nx;
+    ib += nx;
+    ic += nx;
+}
+
+return;
+}
+
+void checkResult(int *hostRef, int *gpuRef, const int N) { double epsilon = 1.0E-8; bool match = 1;
 
 for (int i = 0; i < N; i++)
 {
     if (abs(hostRef[i] - gpuRef[i]) > epsilon)
     {
         match = 0;
-        printf("Arrays do not match!\n");
-        printf("host %5.2f gpu %5.2f at current %d\n", hostRef[i],
-               gpuRef[i], i);
+        printf("host %d gpu %d\n", hostRef[i], gpuRef[i]);
         break;
     }
 }
 
-if (match) printf("Arrays match.\n\n");
-
-return;
+if (match)
+    printf("Arrays match.\n\n");
+else
+    printf("Arrays do not match.\n\n");
 }
 
-void initialData(float *ip, int size) { // generate different seed for random number time_t t; srand((unsigned) time(&t));
+// grid 2D block 2D global void sumMatrixOnGPU2D(int *MatA, int *MatB, int *MatC, int nx,int ny) { unsigned int ix = threadIdx.x + blockIdx.x * blockDim.x; unsigned int iy = threadIdx.y + blockIdx.y * blockDim.y; unsigned int idx = iy * nx + ix;
 
-for (int i = 0; i < size; i++)
-{
-    ip[i] = (float)( rand() & 0xFF ) / 10.0f;
-}
-
-return;
-}
-
-void sumArraysOnHost(float *A, float *B, float *C, const int N)
-{
-for (int idx = 0; idx < N; idx++)
-{ 
-C[idx] = A[idx] + B[idx]; 
-} } 
-global void sumArraysOnGPU(float *A, float *B, float *C, const int N) 
-{ 
-int i = blockIdx.x * blockDim.x + threadIdx.x;
-
-if (i < N) C[i] = A[i] + B[i];
+if (ix < nx && iy < ny)
+    MatC[idx] = MatA[idx] + MatB[idx];
 }
 
 int main(int argc, char **argv) { printf("%s Starting...\n", argv[0]);
@@ -353,72 +91,73 @@ CHECK(cudaGetDeviceProperties(&deviceProp, dev));
 printf("Using Device %d: %s\n", dev, deviceProp.name);
 CHECK(cudaSetDevice(dev));
 
-// set up data size of vectors
-int nElem = 1 << 24;
-printf("Vector size %d\n", nElem);
+// set up data size of matrix
+int nx = 1 << 14;
+int ny = 1 << 14;
+
+int nxy = nx * ny;
+int nBytes = nxy * sizeof(int);
+printf("Matrix size: nx %d ny %d\n", nx, ny);
 
 // malloc host memory
-size_t nBytes = nElem * sizeof(float);
-
-float *h_A, *h_B, *hostRef, *gpuRef;
-h_A     = (float *)malloc(nBytes);
-h_B     = (float *)malloc(nBytes);
-hostRef = (float *)malloc(nBytes);
-gpuRef  = (float *)malloc(nBytes);
-
-double iStart, iElaps;
+int *h_A, *h_B, *hostRef, *gpuRef;
+h_A = (int *)malloc(nBytes);
+h_B = (int *)malloc(nBytes);
+hostRef = (int *)malloc(nBytes);
+gpuRef = (int *)malloc(nBytes);
 
 // initialize data at host side
-iStart = seconds();
-initialData(h_A, nElem);
-initialData(h_B, nElem);
-iElaps = seconds() - iStart;
-printf("initialData Time elapsed %f sec\n", iElaps);
-memset(hostRef, 0, nBytes);
-memset(gpuRef,  0, nBytes);
+double iStart = seconds();
+initialData(h_A, nxy);
+initialData(h_B, nxy);
+double iElaps = seconds() - iStart;
+printf("Matrix initialization elapsed %f sec\n", iElaps);
 
-// add vector at host side for result checks
+memset(hostRef, 0, nBytes);
+memset(gpuRef, 0, nBytes);
+
+// add matrix at host side for result checks
 iStart = seconds();
-sumArraysOnHost(h_A, h_B, hostRef, nElem);
+sumMatrixOnHost(h_A, h_B, hostRef, nx, ny);
 iElaps = seconds() - iStart;
-printf("sumArraysOnHost Time elapsed %f sec\n", iElaps);
+printf("sumMatrixOnHost elapsed %f sec\n", iElaps);
 
 // malloc device global memory
-float *d_A, *d_B, *d_C;
-CHECK(cudaMalloc((float**)&d_A, nBytes));
-CHECK(cudaMalloc((float**)&d_B, nBytes));
-CHECK(cudaMalloc((float**)&d_C, nBytes));
+int *d_MatA, *d_MatB, *d_MatC;
+CHECK(cudaMalloc((void **)&d_MatA, nBytes));
+CHECK(cudaMalloc((void **)&d_MatB, nBytes));
+CHECK(cudaMalloc((void **)&d_MatC, nBytes));
 
 // transfer data from host to device
-CHECK(cudaMemcpy(d_A, h_A, nBytes, cudaMemcpyHostToDevice));
-CHECK(cudaMemcpy(d_B, h_B, nBytes, cudaMemcpyHostToDevice));
-CHECK(cudaMemcpy(d_C, gpuRef, nBytes, cudaMemcpyHostToDevice));
+CHECK(cudaMemcpy(d_MatA, h_A, nBytes, cudaMemcpyHostToDevice));
+CHECK(cudaMemcpy(d_MatB, h_B, nBytes, cudaMemcpyHostToDevice));
 
 // invoke kernel at host side
-int iLen = 256;
-dim3 block (iLen);
-dim3 grid  ((nElem + block.x - 1) / block.x);
+int dimx = 32;
+int dimy = 32;
+dim3 block(dimx, dimy);
+dim3 grid((nx + block.x - 1) / block.x, (ny + block.y - 1) / block.y);
 
 iStart = seconds();
-sumArraysOnGPU<<<grid, block>>>(d_A, d_B, d_C, nElem);
+sumMatrixOnGPU2D<<<grid, block>>>(d_MatA, d_MatB, d_MatC, nx, ny);
 CHECK(cudaDeviceSynchronize());
 iElaps = seconds() - iStart;
-printf("sumArraysOnGPU <<<  %d, %d  >>>  Time elapsed %f sec\n", grid.x,
-       block.x, iElaps);
-
+printf("sumMatrixOnGPU2D <<<(%d,%d), (%d,%d)>>> elapsed %f sec\n", grid.x,
+       grid.y,
+       block.x, block.y, iElaps);
 // check kernel error
-CHECK(cudaGetLastError()) ;
+CHECK(cudaGetLastError());
 
 // copy kernel result back to host side
-CHECK(cudaMemcpy(gpuRef, d_C, nBytes, cudaMemcpyDeviceToHost));
+CHECK(cudaMemcpy(gpuRef, d_MatC, nBytes, cudaMemcpyDeviceToHost));
 
 // check device results
-checkResult(hostRef, gpuRef, nElem);
+checkResult(hostRef, gpuRef, nxy);
 
 // free device global memory
-CHECK(cudaFree(d_A));
-CHECK(cudaFree(d_B));
-CHECK(cudaFree(d_C));
+CHECK(cudaFree(d_MatA));
+CHECK(cudaFree(d_MatB));
+CHECK(cudaFree(d_MatC));
 
 // free host memory
 free(h_A);
@@ -426,34 +165,24 @@ free(h_B);
 free(hostRef);
 free(gpuRef);
 
-return(0);
+// reset device
+CHECK(cudaDeviceReset());
+
+return (0);
 }
-````
+
+```
 
 
 ## Output:
 
+<img width="458" alt="image" src="https://user-images.githubusercontent.com/94185707/236981017-a9028126-4754-49b3-b2b5-0a1f65a1a703.png">
 
-##1. Block.x=1023:
+Matrix initialization : 6.338138 sec.
 
+Sum matrix on Host : 0.884061 sec.
 
-<img width="427" alt="image" src="https://user-images.githubusercontent.com/94185707/236852933-17ddc5af-6294-4814-bd7b-e7aad788df25.png">
-
-##2. Block.x=1024
-
-
-![p](https://user-images.githubusercontent.com/94185707/236853609-ddfb474c-0087-487f-af63-f0dc491d181d.jpg)
-
-##3. Block.x=256
-
-
-<img width="455" alt="image" src="https://user-images.githubusercontent.com/94185707/236853818-3c934e78-4916-4cda-83b4-24ed0644c504.png">
-
-
+Sum matrix on GPU2D : 0.012146 sec
 
 ## Result:
-``
-i) Thus the program to compare the execution time and result of summing two arrays using CUDA programming by setting block.x = 1023 and block.x = 1024 has been successfully implemented and verified.
-
-ii) Thus the program to To analyze the impact of changing execution configuration on the execution time and result of summing two arrays using CUDA programming by letting each thread handle two elements and setting block.x = 256 has been successfully implemented and verified.
-```
+Thus the program to perform PCA matrix summation with a 2D grid and 2D blocks and adapting it to integer matrix addition has been successfully executed.
